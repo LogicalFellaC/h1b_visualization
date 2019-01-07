@@ -1,0 +1,395 @@
+---
+title: "H1B Visualization"
+author: "Chris Oh"
+date: 2018-11-25
+output: 
+  github_document:
+    toc: true
+    toc_depth: 6
+---
+
+```{r setup, include=FALSE}
+# knitr options
+knitr::opts_chunk$set(echo = TRUE, dpi = 400, out.width = "100%")
+```
+
+```{r message=FALSE}
+# Libraries
+library(tidyverse)
+library(readxl)
+library(sf)
+```
+
+```{r, include=FALSE}
+# path_h1b_2014 <- "C:/Users/logicalfellac/Downloads/h1b_data/H-1B_FY14_Q4.xlsx"
+# path_h1b_2015 <- "C:/Users/logicalfellac/Downloads/h1b_data/H-1B_Disclosure_Data_FY15_Q4.xlsx"
+#path_h1b_2016 <- "C:/Users/logic/Downloads/h1b_data/H-1B_Disclosure_Data_FY16.xlsx"
+path_h1b_2017 <- "C:/Users/logic/Downloads/H-1B_Disclosure_Data_FY17.xlsx"
+#data science 2016
+#path_data_science_16 <- "C:/Users/logic/Downloads/h1b_data/data_science_16.rds"
+path_data_science_17 <- "C:/Users/logic/Downloads/h1b_data/data_science_17.rds"
+#data 2016
+#path_data_16 <- "C:/Users/logic/Downloads/h1b_data/data_16.rds"
+path_data_17 <- "C:/Users/logic/Downloads/h1b_data/data_17.rds"
+#state geoms
+path_state <- "C:/Users/logic/Downloads/election_files/cb_2015_us_state_20m_sf.rds"
+
+# CRS for US Albers 
+US_ALBERS <-
+  "+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=37.5 +lon_0=-96 +x_0=0 +y_0=0 +datum=WGS84 +no_defs"
+```
+
+
+## Importing data
+
+```{r, warning=FALSE}
+# h1b_2017 <- read_xlsx(path_h1b_2017)
+
+state <-
+  read_rds(path_state) %>% 
+  filter(!STATEFP %in% c("02", "15")) %>% 
+  mutate(state_fips = STATEFP %>% as.integer()) %>% 
+  st_transform(US_ALBERS)
+
+state_label <- 
+  state %>% 
+  st_centroid() %>% 
+  mutate(
+    x = geometry %>% map_dbl(1),
+    y = geometry %>% map_dbl(2)
+  )
+```
+
+checking
+
+```{r, include=FALSE, eval=FALSE}
+h1b_2016 %>% head()
+h1b_2016 %>% glimpse()
+```
+
+
+```{r, eval=FALSE, include=FALSE}
+h1b_2017 %>% 
+  filter(str_detect(JOB_TITLE, "DATA SCIEN")) %>% 
+  write_rds(path_data_science_17)
+
+h1b_2017 %>% 
+  filter(str_detect(JOB_TITLE, "DATA")) %>% 
+  write_rds(path_data_17)
+
+# h1b_2014 %>% 
+#   filter(str_detect(LCA_CASE_JOB_TITLE, "MECHANICAL DESIGN ENGINEER")) %>% 
+#   mutate(wage = as.numeric(LCA_CASE_WAGE_RATE_FROM)) %>%
+#   filter(LCA_CASE_EMPLOYER_STATE == "CA") %>% 
+#   ggplot(aes(wage)) +
+#   geom_histogram() +
+#   geom_vline(aes(xintercept = median(wage)), color = "red") +
+#   scale_x_continuous(breaks = seq(0, 2e5, 2e4))
+  
+```
+
+## Jobs in data only
+
+```{r}
+data_science_17 <- read_rds(path_data_science_17)
+data_17 <- read_rds(path_data_17)
+```
+
+## Aggregates
+
+### Overall
+
+```{r}
+data_science_17 %>% 
+  mutate(wage = as.numeric(WAGE_RATE_OF_PAY_FROM)) %>% 
+  ggplot(aes(wage)) +
+  geom_histogram(binwidth = 1e4) +
+  geom_vline(aes(xintercept = median(wage)), color = "red") +
+  labs(
+    title = "Wage distribution of jobs in Data Science"
+  ) +
+  scale_x_continuous(breaks = seq(0, 2.5e5, 5e4))
+```
+
+### Highest paying in data
+
+```{r}
+data_17 %>% 
+  mutate(wage = as.numeric(WAGE_RATE_OF_PAY_FROM)) %>% 
+  group_by(EMPLOYER_NAME) %>%
+  filter(n() >= 7) %>% 
+  summarize(median_wage = median(wage, na.rm = TRUE)) %>% 
+  top_n(15, median_wage) %>% 
+  left_join(data_17, by = "EMPLOYER_NAME") %>% 
+  mutate(
+    wage = as.numeric(WAGE_RATE_OF_PAY_FROM),
+    EMPLOYER_NAME = str_to_title(EMPLOYER_NAME)
+  ) %>% 
+  ggplot(aes(fct_reorder(EMPLOYER_NAME, -wage), wage)) +
+  geom_boxplot() +
+  labs(
+    title = "Data wage distribution of top 15 highest paying companies",
+    y = "Wage ($)",
+    x = "Company",
+    caption = "*Only for companies with at least 7 data science jobs"
+  )
+```
+
+### By state
+
+```{r}
+data_17 %>% 
+  mutate(wage = as.numeric(WAGE_RATE_OF_PAY_FROM)) %>% 
+  ggplot(aes(fct_reorder(WORKSITE_STATE, -wage), wage)) +
+  geom_boxplot() +
+  labs(
+    title = "Data wage distribution by state",
+    y = "Wage ($)",
+    x = "States"
+  )
+
+
+data_17 %>%   
+  mutate(wage = as.numeric(WAGE_RATE_OF_PAY_FROM) / 1000) %>%
+  group_by(WORKSITE_STATE) %>%
+  summarize(median_wage = median(wage, na.rm = TRUE)) %>% 
+  left_join(state, by = c("WORKSITE_STATE" = "STUSPS")) %>% 
+  filter(!is.na(STATEFP)) %>% 
+  ggplot() +
+  geom_sf(aes(fill = median_wage), color = "#C0C0C0") +
+  geom_text(
+    aes(x = x, y = y, label = STUSPS),
+    color = "#C0C0C0",
+    data = state_label,
+    size = 3
+  ) +
+  coord_sf(crs = US_ALBERS, datum = NA) +
+  #scale_fill_continuous(breaks = seq(55, 95, 10)) +
+  scale_fill_viridis_c(
+    option = "inferno",
+    labels = str_c(seq(50, 100, 10), "k")
+  ) +
+  labs(
+    title = "2017 Median wage of data jobs in each state",
+    x = "",
+    y = ""
+  ) +
+  guides(
+    fill = guide_colorbar(
+      title = "Median Wage",
+      title.position = "top",
+      title.hjust = .5,
+      title.theme = element_text(size = 7.5, angle = 0),
+      label.theme = element_text(size = 6, angle = 0),
+      barwidth = 10,
+      barheight = .8,
+      raster = FALSE,
+      #label.position = "bottom",
+      #label.vjust = 1,
+      #ticks = FALSE,
+      # nrow = 1,
+      direction = "horizontal"
+    )
+  ) +
+  theme(
+    legend.position = c(0.5, 0),
+    plot.title = element_text(size = 12, face = "bold", hjust = .5),
+    plot.subtitle = element_text(size = 8, hjust = .5),
+    rect = element_blank()
+  )
+
+state %>% 
+  ggplot() +
+  geom_sf(fill = "#f1f1f1", color = "#C0C0C0") +
+  geom_sf(
+    aes(fill = median_wage),
+    color = "#C0C0C0",
+    data =
+      data_science_17 %>%   
+      mutate(wage = as.numeric(WAGE_RATE_OF_PAY_FROM) / 1000) %>%
+      group_by(WORKSITE_STATE) %>%
+      summarize(median_wage = median(wage, na.rm = TRUE)) %>% 
+      left_join(state, by = c("WORKSITE_STATE" = "STUSPS"))
+  ) +
+  geom_text(
+    aes(x = x, y = y, label = STUSPS),
+    color = "#C0C0C0",
+    data = state_label,
+    size = 3
+  ) +
+  coord_sf(crs = US_ALBERS, datum = NA) +
+  scale_fill_viridis_c(
+    #option = "inferno",
+    breaks = seq(50, 120, 10),
+    labels = str_c(seq(50, 120, 10), "k")
+  ) +
+  labs(
+    title = "2017 Median wage of data science jobs in each state",
+    x = "",
+    y = ""
+  ) +
+  guides(
+    fill = guide_colorbar(
+      title = "Median Wage",
+      title.position = "top",
+      title.hjust = .5,
+      title.theme = element_text(size = 7.5, angle = 0),
+      label.theme = element_text(size = 6, angle = 0),
+      barwidth = 10,
+      barheight = .8,
+      raster = FALSE,
+      #label.position = "bottom",
+      #label.vjust = 1,
+      #ticks = FALSE,
+      # nrow = 1,
+      direction = "horizontal"
+    )
+  ) +
+  theme(
+    legend.position = c(.12, .1),
+    plot.title = element_text(size = 12, face = "bold", hjust = .5),
+    plot.subtitle = element_text(size = 8, hjust = .5),
+    rect = element_blank()
+  )
+```
+
+### By city
+
+```{r}
+data_17 %>% 
+  mutate(wage = as.numeric(WAGE_RATE_OF_PAY_FROM)) %>% 
+  group_by(WORKSITE_CITY) %>%
+  filter(n() >= 20) %>% 
+  summarize(median_wage = median(wage, na.rm = TRUE)) %>% 
+  top_n(15, median_wage) %>% 
+  left_join(data_17, by = "WORKSITE_CITY") %>% 
+  mutate(
+    wage = as.numeric(WAGE_RATE_OF_PAY_FROM),
+    EMPLOYER_NAME = str_to_title(WORKSITE_CITY)
+  ) %>% 
+  filter(wage > 1000) %>% 
+  ggplot(aes(fct_reorder(EMPLOYER_NAME, -wage), wage)) +
+  geom_boxplot() +
+  labs(
+    title = "Data wage distribution of top 15 highest paying cities",
+    y = "Wage ($)",
+    x = "Company",
+    caption = "*Only for cities with at least 20 data jobs records"
+  )
+
+#Get CALIFORNIA city geoms and then do a geo viz with circles indicating the wage size
+```
+
+### Within California
+
+```{r}
+data_17 %>% 
+  filter(WORKSITE_STATE %in% "CA") %>% 
+  mutate(wage = as.numeric(WAGE_RATE_OF_PAY_FROM)) %>% 
+  group_by(WORKSITE_CITY) %>%
+  filter(n() >= 20) %>% 
+  summarize(median_wage = median(wage, na.rm = TRUE)) %>% 
+  top_n(15, median_wage) %>% 
+  left_join(data_17, by = "WORKSITE_CITY") %>% 
+  mutate(
+    wage = as.numeric(WAGE_RATE_OF_PAY_FROM),
+    EMPLOYER_NAME = str_to_title(WORKSITE_CITY)
+  ) %>% 
+  ggplot(aes(fct_reorder(EMPLOYER_NAME, -wage), wage)) +
+  geom_boxplot() +
+  labs(
+    title = "Data wage distribution of top 15 highest paying cities in California",
+    y = "Wage ($)",
+    x = "Company",
+    caption = "*Only for cities with at least 20 data jobs records"
+  )
+```
+
+
+
+
+```{r, include=FALSE, eval=FALSE}
+# Data Analysts only
+data_16 %>% 
+  filter(str_detect(JOB_TITLE, "ANALYST")) %>% 
+  mutate(wage = as.numeric(WAGE_RATE_OF_PAY_FROM)) %>% 
+  ggplot(aes(wage)) +
+  geom_histogram() +
+  geom_vline(aes(xintercept = median(wage)), color = "red") +
+  labs(
+    title = "2016 data analyst wage distribution"
+  )
+
+data_16 %>% 
+  filter(str_detect(JOB_TITLE, "SCIENTIST")) %>% 
+  mutate(wage = as.numeric(WAGE_RATE_OF_PAY_FROM)) %>% 
+  ggplot(aes(wage)) +
+  geom_histogram() +
+  geom_vline(aes(xintercept = median(wage)), color = "red") +
+  labs(
+    title = "2016 data scientist wage distribution"
+  )
+
+data_16 %>% 
+  filter(str_detect(JOB_TITLE, "MANAGER")) %>% 
+  mutate(wage = as.numeric(WAGE_RATE_OF_PAY_FROM)) %>% 
+  ggplot(aes(wage)) +
+  geom_histogram() +
+  geom_vline(aes(xintercept = median(wage)), color = "red") +
+  labs(
+    title = "2016 data manager wage distribution"
+  )
+
+data_16 %>% 
+  filter(str_detect(JOB_TITLE, "ENGINEER")) %>% 
+  mutate(wage = as.numeric(WAGE_RATE_OF_PAY_FROM)) %>% 
+  ggplot(aes(wage)) +
+  geom_histogram() +
+  geom_vline(aes(xintercept = median(wage)), color = "red") +
+  labs(
+    title = "2016 data engineer wage distribution"
+  )
+  # group_by(LCA_CASE_EMPLOYER_NAME) %>%
+  # filter(n() > 5) %>% 
+  # summarize(median_wage = median(wage, na.rm = TRUE)) %>% 
+  # ggplot(aes(fct_reorder(LCA_CASE_EMPLOYER_NAME, -median_wage), median_wage)) +
+  # geom_col() +
+  # theme(
+  #   axis.text.x = element_text(angle = -45, hjust = 0, size = 7)
+  # )
+
+data_14 %>% 
+  filter(str_detect(LCA_CASE_JOB_TITLE, "ANALYST")) %>% 
+  count(LCA_CASE_EMPLOYER_NAME) %>% 
+  filter(n > 10) %>% 
+  ggplot(aes(fct_reorder(LCA_CASE_EMPLOYER_NAME, -n), n)) +
+  geom_col() +
+  theme(
+    axis.text.x = element_text(angle = -45, hjust = 0, size = 7)
+  )
+```
+
+
+```{r, eval=FALSE, include=FALSE}
+data_test <- 
+  data_14 %>% 
+  unite(
+    full_address,
+    LCA_CASE_EMPLOYER_ADDRESS, 
+    LCA_CASE_EMPLOYER_CITY, 
+    LCA_CASE_EMPLOYER_STATE, 
+    sep = ", "
+  ) %>% 
+  unite(
+    full_address,
+    full_address,
+    LCA_CASE_EMPLOYER_POSTAL_CODE,
+    sep = " "
+  ) %>% 
+  slice(1:50) %>% 
+  select(1:15) %>% 
+  mutate(full_address = as.character(full_address))
+
+data_test %>% 
+  mutate_geocode(location = full_address)
+```

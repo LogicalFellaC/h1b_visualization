@@ -298,7 +298,7 @@ state %>%
     )
   ) +
   theme(
-    legend.position = c(.12, .1),
+    legend.position = c(.8, 0),
     plot.title = element_text(size = 12, face = "bold", hjust = .5),
     plot.subtitle = element_text(size = 8, hjust = .5),
     rect = element_blank()

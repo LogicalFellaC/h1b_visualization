@@ -7,7 +7,7 @@ Chris Oh
 -   [Jobs in data only](#jobs-in-data-only)
 -   [Aggregates](#aggregates)
     -   [Overall](#overall)
-    -   [Highest paying companyies in data](#highest-paying-companyies-in-data)
+    -   [Highest paying companies in data](#highest-paying-companies-in-data)
     -   [By state](#by-state)
     -   [By city](#by-city)
     -   [Within California](#within-california)
@@ -107,7 +107,7 @@ data_science_17 %>%
 
 <img src="h1b_data_files/figure-markdown_github/unnamed-chunk-7-1.png" width="100%" />
 
-### Highest paying companyies in data
+### Highest paying companies in data
 
 ``` r
 data_17 %>% 

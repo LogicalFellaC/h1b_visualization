@@ -162,7 +162,7 @@ data_science_17 %>%
   scale_x_continuous(breaks = seq(0, 2.5e5, 5e4))
 ```
 
-### Highest paying companyies in data
+### Highest paying companies in data
 
 ```{r}
 data_17 %>% 

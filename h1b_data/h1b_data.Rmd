@@ -1,7 +1,7 @@
 ---
 title: "H1B Visualization"
 author: "Chris Oh"
-date: 2018-11-25
+date: 2019-10-14
 output: 
   github_document:
     toc: true
@@ -13,7 +13,7 @@ output:
 knitr::opts_chunk$set(echo = TRUE, dpi = 400, out.width = "100%")
 ```
 
-```{r message=FALSE}
+```{r message=FALSE, warning=FALSE}
 # Libraries
 library(tidyverse)
 library(readxl)
@@ -37,6 +37,19 @@ path_state <- "C:/Users/logic/Downloads/election_files/cb_2015_us_state_20m_sf.r
 # CRS for US Albers 
 US_ALBERS <-
   "+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=37.5 +lon_0=-96 +x_0=0 +y_0=0 +datum=WGS84 +no_defs"
+# CRS for Alaska
+CRS_ALASKA <- "+proj=aea +lat_1=55 +lat_2=65 +lat_0=50 +lon_0=-154 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs "
+# CRS for Hawaii
+CRS_HAWAII <- "+proj=aea +lat_1=8 +lat_2=18 +lat_0=13 +lon_0=-157 +x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs"
+
+# Function for translating geometry
+# Adapted to take into account just the state centroid
+# Original: https://github.com/clauswilke/dviz.supp/blob/master/data-raw/tidy_census/US_income.R
+place_geometry <- function(geometry, position, scale = 1) {
+  centroid = st_combine(geometry) %>% st_centroid()
+  (geometry - centroid) * scale + 
+    st_sfc(st_point(position))
+}
 ```
 
 
@@ -44,12 +57,50 @@ US_ALBERS <-
 
 ```{r, warning=FALSE}
 # h1b_2017 <- read_xlsx(path_h1b_2017)
-
-state <-
+# Geographical data
+state_rest <-
   read_rds(path_state) %>% 
   filter(!STATEFP %in% c("02", "15")) %>% 
   mutate(state_fips = STATEFP %>% as.integer()) %>% 
   st_transform(US_ALBERS)
+
+state_coord <-
+  st_bbox(state_rest)
+
+state_alaska <-
+  read_rds(path_state) %>%
+  filter(STATEFP %in% "02") %>% 
+  mutate(state_fips = as.integer(GEOID)) %>% 
+  st_transform(crs = CRS_ALASKA)
+
+st_geometry(state_alaska) <-
+  place_geometry(
+    st_geometry(state_alaska),
+    c(state_coord$xmin + 0.08*(state_coord$xmax - state_coord$xmin),
+      state_coord$ymin + 0.07*(state_coord$ymax - state_coord$ymin)),
+    scale = .35
+  )
+
+st_crs(state_alaska) <- US_ALBERS
+
+state_hawaii <-
+  read_rds(path_state) %>%
+  filter(STATEFP %in% "15") %>% 
+  mutate(state_fips = as.integer(GEOID)) %>% 
+  st_transform(crs = CRS_HAWAII)
+
+st_geometry(state_hawaii) <-
+  place_geometry(
+    st_geometry(state_hawaii),
+    c(state_coord$xmin + 0.3*(state_coord$xmax - state_coord$xmin),
+      state_coord$ymin)
+  )
+
+st_crs(state_hawaii) <- US_ALBERS
+
+state <-
+  state_rest %>% 
+  rbind(state_alaska, state_hawaii)
 
 state_label <- 
   state %>% 
@@ -111,7 +162,7 @@ data_science_17 %>%
   scale_x_continuous(breaks = seq(0, 2.5e5, 5e4))
 ```
 
-### Highest paying in data
+### Highest paying companyies in data
 
 ```{r}
 data_17 %>% 
@@ -125,14 +176,15 @@ data_17 %>%
     wage = as.numeric(WAGE_RATE_OF_PAY_FROM),
     EMPLOYER_NAME = str_to_title(EMPLOYER_NAME)
   ) %>% 
-  ggplot(aes(fct_reorder(EMPLOYER_NAME, -wage), wage)) +
+  ggplot(aes(fct_reorder(EMPLOYER_NAME, wage), wage)) +
   geom_boxplot() +
   labs(
     title = "Data wage distribution of top 15 highest paying companies",
     y = "Wage ($)",
     x = "Company",
     caption = "*Only for companies with at least 7 data science jobs"
-  )
+  ) +
+  coord_flip()
 ```
 
 ### By state
@@ -268,14 +320,15 @@ data_17 %>%
     EMPLOYER_NAME = str_to_title(WORKSITE_CITY)
   ) %>% 
   filter(wage > 1000) %>% 
-  ggplot(aes(fct_reorder(EMPLOYER_NAME, -wage), wage)) +
+  ggplot(aes(fct_reorder(EMPLOYER_NAME, wage), wage)) +
   geom_boxplot() +
   labs(
     title = "Data wage distribution of top 15 highest paying cities",
     y = "Wage ($)",
     x = "Company",
     caption = "*Only for cities with at least 20 data jobs records"
-  )
+  ) +
+  coord_flip()
 
 #Get CALIFORNIA city geoms and then do a geo viz with circles indicating the wage size
 ```
@@ -295,14 +348,15 @@ data_17 %>%
     wage = as.numeric(WAGE_RATE_OF_PAY_FROM),
     EMPLOYER_NAME = str_to_title(WORKSITE_CITY)
   ) %>% 
-  ggplot(aes(fct_reorder(EMPLOYER_NAME, -wage), wage)) +
+  ggplot(aes(fct_reorder(EMPLOYER_NAME, wage), wage)) +
   geom_boxplot() +
   labs(
     title = "Data wage distribution of top 15 highest paying cities in California",
     y = "Wage ($)",
     x = "Company",
     caption = "*Only for cities with at least 20 data jobs records"
-  )
+  ) +
+  coord_flip()
 ```
 
 

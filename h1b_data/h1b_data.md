@@ -1,13 +1,13 @@
 H1B Visualization
 ================
 Chris Oh
-2018-11-25
+2019-10-14
 
 -   [Importing data](#importing-data)
 -   [Jobs in data only](#jobs-in-data-only)
 -   [Aggregates](#aggregates)
     -   [Overall](#overall)
-    -   [Highest paying in data](#highest-paying-in-data)
+    -   [Highest paying companyies in data](#highest-paying-companyies-in-data)
     -   [By state](#by-state)
     -   [By city](#by-city)
     -   [Within California](#within-california)
@@ -15,36 +15,59 @@ Chris Oh
 ``` r
 # Libraries
 library(tidyverse)
-```
-
-    ## Warning: package 'tidyverse' was built under R version 3.5.1
-
-    ## Warning: package 'ggplot2' was built under R version 3.5.1
-
-    ## Warning: package 'tidyr' was built under R version 3.5.1
-
-    ## Warning: package 'readr' was built under R version 3.5.1
-
-    ## Warning: package 'dplyr' was built under R version 3.5.1
-
-``` r
 library(readxl)
 library(sf)
 ```
-
-    ## Warning: package 'sf' was built under R version 3.5.1
 
 Importing data
 --------------
 
 ``` r
 # h1b_2017 <- read_xlsx(path_h1b_2017)
-
-state <-
+# Geographical data
+state_rest <-
   read_rds(path_state) %>% 
   filter(!STATEFP %in% c("02", "15")) %>% 
   mutate(state_fips = STATEFP %>% as.integer()) %>% 
   st_transform(US_ALBERS)
+
+state_coord <-
+  st_bbox(state_rest)
+
+state_alaska <-
+  read_rds(path_state) %>%
+  filter(STATEFP %in% "02") %>% 
+  mutate(state_fips = as.integer(GEOID)) %>% 
+  st_transform(crs = CRS_ALASKA)
+
+st_geometry(state_alaska) <-
+  place_geometry(
+    st_geometry(state_alaska),
+    c(state_coord$xmin + 0.08*(state_coord$xmax - state_coord$xmin),
+      state_coord$ymin + 0.07*(state_coord$ymax - state_coord$ymin)),
+    scale = .35
+  )
+
+st_crs(state_alaska) <- US_ALBERS
+
+state_hawaii <-
+  read_rds(path_state) %>%
+  filter(STATEFP %in% "15") %>% 
+  mutate(state_fips = as.integer(GEOID)) %>% 
+  st_transform(crs = CRS_HAWAII)
+
+st_geometry(state_hawaii) <-
+  place_geometry(
+    st_geometry(state_hawaii),
+    c(state_coord$xmin + 0.3*(state_coord$xmax - state_coord$xmin),
+      state_coord$ymin)
+  )
+
+st_crs(state_hawaii) <- US_ALBERS
+
+state <-
+  state_rest %>% 
+  rbind(state_alaska, state_hawaii)
 
 state_label <- 
   state %>% 
@@ -84,7 +107,7 @@ data_science_17 %>%
 
 <img src="h1b_data_files/figure-markdown_github/unnamed-chunk-7-1.png" width="100%" />
 
-### Highest paying in data
+### Highest paying companyies in data
 
 ``` r
 data_17 %>% 
@@ -98,14 +121,15 @@ data_17 %>%
     wage = as.numeric(WAGE_RATE_OF_PAY_FROM),
     EMPLOYER_NAME = str_to_title(EMPLOYER_NAME)
   ) %>% 
-  ggplot(aes(fct_reorder(EMPLOYER_NAME, -wage), wage)) +
+  ggplot(aes(fct_reorder(EMPLOYER_NAME, wage), wage)) +
   geom_boxplot() +
   labs(
     title = "Data wage distribution of top 15 highest paying companies",
     y = "Wage ($)",
     x = "Company",
     caption = "*Only for companies with at least 7 data science jobs"
-  )
+  ) +
+  coord_flip()
 ```
 
 <img src="h1b_data_files/figure-markdown_github/unnamed-chunk-8-1.png" width="100%" />
@@ -252,14 +276,15 @@ data_17 %>%
     EMPLOYER_NAME = str_to_title(WORKSITE_CITY)
   ) %>% 
   filter(wage > 1000) %>% 
-  ggplot(aes(fct_reorder(EMPLOYER_NAME, -wage), wage)) +
+  ggplot(aes(fct_reorder(EMPLOYER_NAME, wage), wage)) +
   geom_boxplot() +
   labs(
     title = "Data wage distribution of top 15 highest paying cities",
     y = "Wage ($)",
     x = "Company",
     caption = "*Only for cities with at least 20 data jobs records"
-  )
+  ) +
+  coord_flip()
 ```
 
 <img src="h1b_data_files/figure-markdown_github/unnamed-chunk-10-1.png" width="100%" />
@@ -283,14 +308,15 @@ data_17 %>%
     wage = as.numeric(WAGE_RATE_OF_PAY_FROM),
     EMPLOYER_NAME = str_to_title(WORKSITE_CITY)
   ) %>% 
-  ggplot(aes(fct_reorder(EMPLOYER_NAME, -wage), wage)) +
+  ggplot(aes(fct_reorder(EMPLOYER_NAME, wage), wage)) +
   geom_boxplot() +
   labs(
     title = "Data wage distribution of top 15 highest paying cities in California",
     y = "Wage ($)",
     x = "Company",
     caption = "*Only for cities with at least 20 data jobs records"
-  )
+  ) +
+  coord_flip()
 ```
 
 <img src="h1b_data_files/figure-markdown_github/unnamed-chunk-11-1.png" width="100%" />
